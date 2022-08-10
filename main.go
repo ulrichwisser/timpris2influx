@@ -31,6 +31,8 @@ import (
 	_ "github.com/influxdata/influxdb1-client" // this is important because of the bug in go mod
 	client "github.com/influxdata/influxdb1-client/v2"
 	homedir "github.com/mitchellh/go-homedir"
+	"database/sql"
+	_ "github.com/go-sql-driver/mysql"
 )
 
 const VERBOSE = "verbose"
@@ -128,9 +130,6 @@ func run(cmd *cobra.Command, args []string) {
 			fmt.Println("Visiting", r.URL)
 		}
 	})
-	c.OnResponse(func(r *colly.Response) {
-		fmt.Println(r.StatusCode)
-	})
 	c.OnHTML("canvas", func(e *colly.HTMLElement) {
 		/*
 			Decode labels first
@@ -175,6 +174,21 @@ func run(cmd *cobra.Command, args []string) {
 		}
 		defer c.Close()
 
+		// Create the database handle, confirm driver is present
+		var db *sql.DB
+		var stmt *sql.Stmt
+		var useMariadb bool = false
+		if len(viper.GetString("MariaDSN"))>0 {
+		db, _ = sql.Open("mysql", viper.GetString("MariaDSN"))
+		defer db.Close()
+		useMariadb = true
+		stmt, err = db.Prepare("INSERT INTO pricesbyhour(year,month,day,hour,epoch,area,price) VALUES( ?, ?, ?, ?, ?, ?, ? )")
+		if err != nil {
+			panic(err)
+		}
+		defer stmt.Close() // Prepared statements take up server resources and should be closed after use.
+		}
+	
 		// Create a new point batch
 		bp, err := client.NewBatchPoints(client.BatchPointsConfig{
 			Database:  viper.GetString("InfluxDB"),
@@ -211,6 +225,14 @@ func run(cmd *cobra.Command, args []string) {
 
 			// add point to list
 			bp.AddPoint(pt)
+
+			//
+			if useMariadb {
+				if _, err := stmt.Exec(year,month,day, hour, t.UTC().Format("2006-01-02 15:04:05"), "SE3", int(price*100)); err != nil {
+					panic(err)
+				}
+		
+			}
 		}
 
 		// Write the batch
