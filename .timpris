@@ -1,0 +1,6 @@
+# Sample config 
+InfluxServer: https://localhost:8086
+InfluxDB: sampledb
+InfluxUser: username
+InfluxPasswd: passwd 
+
